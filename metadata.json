@@ -1,0 +1,7 @@
+{
+  "name": "cPanel Web Hosting Control Panel",
+  "description": "Comprehensive cPanel control panel replica featuring File Manager, phpMyAdmin & MySQL Databases, Email Accounts, DNS Zone Editor, Terminal SSH console, WordPress Toolkit, and live server statistics.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
+
