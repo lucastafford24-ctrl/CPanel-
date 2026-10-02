@@ -1,0 +1,104 @@
+{
+  "entities": {
+    "userProfile": {
+      "title": "User Profile",
+      "description": "User profile in cPanel hosting panel",
+      "type": "object",
+      "properties": {
+        "uid": { "type": "string", "maxLength": 128 },
+        "email": { "type": "string", "maxLength": 255 },
+        "displayName": { "type": "string", "maxLength": 100 },
+        "cpanelUser": { "type": "string", "maxLength": 64 },
+        "primaryDomain": { "type": "string", "maxLength": 255 },
+        "createdAt": { "type": "string" }
+      },
+      "required": ["uid", "cpanelUser", "primaryDomain"]
+    },
+    "databaseRecord": {
+      "title": "Database Record",
+      "description": "MySQL database managed through cPanel",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string", "maxLength": 128 },
+        "name": { "type": "string", "maxLength": 64 },
+        "sizeMb": { "type": "number" },
+        "users": { "type": "array" },
+        "tablesCount": { "type": "number" },
+        "userId": { "type": "string", "maxLength": 128 },
+        "createdAt": { "type": "string" }
+      },
+      "required": ["name", "userId"]
+    },
+    "emailAccount": {
+      "title": "Email Account",
+      "description": "Email mailbox on hosted domain",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string", "maxLength": 128 },
+        "address": { "type": "string", "maxLength": 255 },
+        "domain": { "type": "string", "maxLength": 255 },
+        "usageMb": { "type": "number" },
+        "quotaMb": { "type": "number" },
+        "hasAutoresponder": { "type": "boolean" },
+        "userId": { "type": "string", "maxLength": 128 },
+        "created": { "type": "string" }
+      },
+      "required": ["address", "domain", "userId"]
+    },
+    "dnsRecord": {
+      "title": "DNS Zone Record",
+      "description": "DNS record managed in Zone Editor",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string", "maxLength": 128 },
+        "name": { "type": "string", "maxLength": 255 },
+        "ttl": { "type": "number" },
+        "type": { "type": "string", "enum": ["A", "AAAA", "CNAME", "MX", "TXT", "SRV"] },
+        "record": { "type": "string", "maxLength": 500 },
+        "priority": { "type": "number" },
+        "userId": { "type": "string", "maxLength": 128 }
+      },
+      "required": ["name", "type", "record", "userId"]
+    },
+    "cronJob": {
+      "title": "Cron Job",
+      "description": "Scheduled task command in cPanel",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string", "maxLength": 128 },
+        "minute": { "type": "string", "maxLength": 20 },
+        "hour": { "type": "string", "maxLength": 20 },
+        "day": { "type": "string", "maxLength": 20 },
+        "month": { "type": "string", "maxLength": 20 },
+        "weekday": { "type": "string", "maxLength": 20 },
+        "command": { "type": "string", "maxLength": 500 },
+        "description": { "type": "string", "maxLength": 255 },
+        "active": { "type": "boolean" },
+        "userId": { "type": "string", "maxLength": 128 }
+      },
+      "required": ["command", "userId"]
+    }
+  },
+  "firestore": {
+    "/users/{userId}": {
+      "schema": "userProfile",
+      "description": "User profile document"
+    },
+    "/users/{userId}/databases/{databaseId}": {
+      "schema": "databaseRecord",
+      "description": "User's managed databases"
+    },
+    "/users/{userId}/emails/{emailId}": {
+      "schema": "emailAccount",
+      "description": "User's managed email accounts"
+    },
+    "/users/{userId}/dns_records/{recordId}": {
+      "schema": "dnsRecord",
+      "description": "User's managed DNS zone records"
+    },
+    "/users/{userId}/cron_jobs/{jobId}": {
+      "schema": "cronJob",
+      "description": "User's scheduled cron tasks"
+    }
+  }
+}

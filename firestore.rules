@@ -1,0 +1,58 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+    // Default-deny global safety net
+    match /{document=**} {
+      allow read, write: if false;
+    }
+
+    function isSignedIn() {
+      return request.auth != null;
+    }
+
+    function isOwner(userId) {
+      return isSignedIn() && request.auth.uid == userId;
+    }
+
+    function isValidId(id) {
+      return id is string && id.size() <= 128 && id.matches('^[a-zA-Z0-9_\\-]+$');
+    }
+
+    // Connection test document
+    match /test/connection {
+      allow read: if true;
+    }
+
+    // User profile and subcollections
+    match /users/{userId} {
+      allow get: if isOwner(userId) && isValidId(userId);
+      allow list: if false;
+      allow create, update: if isOwner(userId) && isValidId(userId);
+      allow delete: if isOwner(userId) && isValidId(userId);
+
+      match /databases/{databaseId} {
+        allow get, delete: if isOwner(userId) && isValidId(databaseId);
+        allow list: if isOwner(userId);
+        allow create, update: if isOwner(userId) && isValidId(databaseId);
+      }
+
+      match /emails/{emailId} {
+        allow get, delete: if isOwner(userId) && isValidId(emailId);
+        allow list: if isOwner(userId);
+        allow create, update: if isOwner(userId) && isValidId(emailId);
+      }
+
+      match /dns_records/{recordId} {
+        allow get, delete: if isOwner(userId) && isValidId(recordId);
+        allow list: if isOwner(userId);
+        allow create, update: if isOwner(userId) && isValidId(recordId);
+      }
+
+      match /cron_jobs/{jobId} {
+        allow get, delete: if isOwner(userId) && isValidId(jobId);
+        allow list: if isOwner(userId);
+        allow create, update: if isOwner(userId) && isValidId(jobId);
+      }
+    }
+  }
+}

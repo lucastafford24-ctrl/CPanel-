@@ -25,6 +25,38 @@ import {
   INITIAL_NOTIFICATIONS 
 } from './data/cpanelData';
 
+import { 
+  auth, 
+  db, 
+  googleProvider, 
+  testConnection, 
+  handleFirestoreError, 
+  OperationType 
+} from './firebase';
+import { 
+  signInWithPopup, 
+  signOut, 
+  onAuthStateChanged, 
+  User 
+} from 'firebase/auth';
+import { 
+  collection, 
+  onSnapshot, 
+  doc, 
+  setDoc 
+} from 'firebase/firestore';
+
+import { 
+  syncDatabaseRecord, 
+  deleteDatabaseRecord, 
+  syncEmailAccount, 
+  deleteEmailAccount, 
+  syncDnsRecord, 
+  deleteDnsRecord, 
+  syncCronJob, 
+  deleteCronJob 
+} from './services/firebaseSync';
+
 import { Header } from './components/Header';
 import { Sidebar } from './components/Sidebar';
 import { StatsPanel } from './components/StatsPanel';
@@ -56,6 +88,10 @@ export default function App() {
   const [isNotificationsOpen, setIsNotificationsOpen] = useState(false);
   const [isPasswordModalOpen, setIsPasswordModalOpen] = useState(false);
 
+  // Firebase Auth & Cloud Connection State
+  const [currentUser, setCurrentUser] = useState<User | null>(null);
+  const [isFirebaseConnected, setIsFirebaseConnected] = useState<boolean>(false);
+
   // Core Data State
   const [stats, setStats] = useState<ServerStats>(INITIAL_STATS);
   const [files, setFiles] = useState<FileItem[]>(INITIAL_FILES);
@@ -67,6 +103,120 @@ export default function App() {
   const [cronJobs, setCronJobs] = useState<CronJob[]>(INITIAL_CRON_JOBS);
   const [logs] = useState<VisitorLog[]>(INITIAL_LOGS);
   const [notifications, setNotifications] = useState<SystemNotification[]>(INITIAL_NOTIFICATIONS);
+
+  // 1. Test Firestore Connection on Boot
+  useEffect(() => {
+    testConnection().then(connected => {
+      setIsFirebaseConnected(connected);
+      if (connected) {
+        setNotifications(prev => [
+          {
+            id: `nt_fire_${Date.now()}`,
+            title: 'Firebase Firestore Connected',
+            message: 'Cloud Firestore database is live and synchronized with cPanel hosting storage.',
+            time: 'Just now',
+            type: 'success',
+            read: false,
+          },
+          ...prev
+        ]);
+      }
+    });
+  }, []);
+
+  // 2. Track Firebase Auth state
+  useEffect(() => {
+    const unsubscribe = onAuthStateChanged(auth, async (user) => {
+      setCurrentUser(user);
+      if (user) {
+        // Update user profile in Firestore
+        const userProfileRef = doc(db, 'users', user.uid);
+        try {
+          await setDoc(userProfileRef, {
+            uid: user.uid,
+            email: user.email || '',
+            displayName: user.displayName || 'cPanel Administrator',
+            cpanelUser: user.email ? user.email.split('@')[0] : 'demouser',
+            primaryDomain: stats.primaryDomain,
+            createdAt: new Date().toISOString()
+          }, { merge: true });
+        } catch (err) {
+          console.warn('Profile sync notice:', err);
+        }
+
+        setStats(prev => ({
+          ...prev,
+          currentUser: user.email ? user.email.split('@')[0] : prev.currentUser,
+        }));
+      }
+    });
+
+    return () => unsubscribe();
+  }, [stats.primaryDomain]);
+
+  // 3. Attach real-time listeners for authenticated user
+  useEffect(() => {
+    if (!currentUser) return;
+
+    // Listen to databases
+    const dbPath = `users/${currentUser.uid}/databases`;
+    const unsubDbs = onSnapshot(collection(db, 'users', currentUser.uid, 'databases'), (snapshot) => {
+      if (!snapshot.empty) {
+        const loadedDbs = snapshot.docs.map(d => d.data() as DatabaseRecord);
+        setDatabases(loadedDbs);
+      } else {
+        INITIAL_DATABASES.forEach(d => syncDatabaseRecord(currentUser.uid, d));
+      }
+    }, (error) => {
+      handleFirestoreError(error, OperationType.LIST, dbPath);
+    });
+
+    // Listen to emails
+    const emailPath = `users/${currentUser.uid}/emails`;
+    const unsubEmails = onSnapshot(collection(db, 'users', currentUser.uid, 'emails'), (snapshot) => {
+      if (!snapshot.empty) {
+        const loadedEmails = snapshot.docs.map(d => d.data() as EmailAccount);
+        setEmails(loadedEmails);
+      } else {
+        INITIAL_EMAILS.forEach(m => syncEmailAccount(currentUser.uid, m));
+      }
+    }, (error) => {
+      handleFirestoreError(error, OperationType.LIST, emailPath);
+    });
+
+    // Listen to DNS records
+    const dnsPath = `users/${currentUser.uid}/dns_records`;
+    const unsubDns = onSnapshot(collection(db, 'users', currentUser.uid, 'dns_records'), (snapshot) => {
+      if (!snapshot.empty) {
+        const loadedDns = snapshot.docs.map(d => d.data() as DnsRecord);
+        setDnsRecords(loadedDns);
+      } else {
+        INITIAL_DNS_RECORDS.forEach(r => syncDnsRecord(currentUser.uid, r));
+      }
+    }, (error) => {
+      handleFirestoreError(error, OperationType.LIST, dnsPath);
+    });
+
+    // Listen to Cron jobs
+    const cronPath = `users/${currentUser.uid}/cron_jobs`;
+    const unsubCron = onSnapshot(collection(db, 'users', currentUser.uid, 'cron_jobs'), (snapshot) => {
+      if (!snapshot.empty) {
+        const loadedCron = snapshot.docs.map(d => d.data() as CronJob);
+        setCronJobs(loadedCron);
+      } else {
+        INITIAL_CRON_JOBS.forEach(j => syncCronJob(currentUser.uid, j));
+      }
+    }, (error) => {
+      handleFirestoreError(error, OperationType.LIST, cronPath);
+    });
+
+    return () => {
+      unsubDbs();
+      unsubEmails();
+      unsubDns();
+      unsubCron();
+    };
+  }, [currentUser]);
 
   // Sync dark mode class
   useEffect(() => {
@@ -85,6 +235,68 @@ export default function App() {
       mysqlDiskUsedMb: databases.reduce((acc, curr) => acc + curr.sizeMb, 0),
     }));
   }, [emails, databases]);
+
+  const handleSignInGoogle = async () => {
+    try {
+      await signInWithPopup(auth, googleProvider);
+    } catch (err) {
+      console.error('Google Sign-in failed:', err);
+      alert('Google Sign-in popup was cancelled or failed.');
+    }
+  };
+
+  const handleSignOutGoogle = async () => {
+    try {
+      await signOut(auth);
+      setCurrentUser(null);
+      setStats(prev => ({ ...prev, currentUser: 'demouser' }));
+    } catch (err) {
+      console.error('Sign-out error:', err);
+    }
+  };
+
+  // State update wrappers that sync to Firestore if signed in
+  const handleUpdateDatabases = (newDbs: DatabaseRecord[]) => {
+    setDatabases(newDbs);
+    if (currentUser) {
+      // Find added or updated
+      newDbs.forEach(d => syncDatabaseRecord(currentUser.uid, d));
+      // Find deleted
+      databases.filter(d => !newDbs.some(nd => nd.name === d.name)).forEach(deleted => {
+        deleteDatabaseRecord(currentUser.uid, deleted.name);
+      });
+    }
+  };
+
+  const handleUpdateEmails = (newEmails: EmailAccount[]) => {
+    setEmails(newEmails);
+    if (currentUser) {
+      newEmails.forEach(m => syncEmailAccount(currentUser.uid, m));
+      emails.filter(m => !newEmails.some(nm => nm.id === m.id)).forEach(deleted => {
+        deleteEmailAccount(currentUser.uid, deleted.id);
+      });
+    }
+  };
+
+  const handleUpdateDnsRecords = (newDns: DnsRecord[]) => {
+    setDnsRecords(newDns);
+    if (currentUser) {
+      newDns.forEach(r => syncDnsRecord(currentUser.uid, r));
+      dnsRecords.filter(r => !newDns.some(nr => nr.id === r.id)).forEach(deleted => {
+        deleteDnsRecord(currentUser.uid, deleted.id);
+      });
+    }
+  };
+
+  const handleUpdateCronJobs = (newJobs: CronJob[]) => {
+    setCronJobs(newJobs);
+    if (currentUser) {
+      newJobs.forEach(j => syncCronJob(currentUser.uid, j));
+      cronJobs.filter(j => !newJobs.some(nj => nj.id === j.id)).forEach(deleted => {
+        deleteCronJob(currentUser.uid, deleted.id);
+      });
+    }
+  };
 
   const handleNavigate = (app: ActiveApp) => {
     setActiveApp(app);
@@ -121,6 +333,10 @@ export default function App() {
         currentUser={stats.currentUser}
         serverName={stats.serverName}
         onOpenPasswordModal={() => setIsPasswordModalOpen(true)}
+        isFirebaseConnected={isFirebaseConnected}
+        firebaseUserEmail={currentUser?.email}
+        onSignInGoogle={handleSignInGoogle}
+        onSignOutGoogle={handleSignOutGoogle}
       />
 
       {/* Main Layout Area: Left Nav + Center Work Area + Right Stats */}
@@ -162,7 +378,7 @@ export default function App() {
           {activeApp === 'mysql' && (
             <MySqlDatabasesApp
               databases={databases}
-              onUpdateDatabases={setDatabases}
+              onUpdateDatabases={handleUpdateDatabases}
               onClose={() => handleNavigate('dashboard')}
             />
           )}
@@ -170,7 +386,7 @@ export default function App() {
           {activeApp === 'email-accounts' && (
             <EmailAccountsApp
               emails={emails}
-              onUpdateEmails={setEmails}
+              onUpdateEmails={handleUpdateEmails}
               onOpenWebmail={handleOpenWebmail}
               onClose={() => handleNavigate('dashboard')}
             />
@@ -186,7 +402,7 @@ export default function App() {
           {activeApp === 'zone-editor' && (
             <ZoneEditorApp
               records={dnsRecords}
-              onUpdateRecords={setDnsRecords}
+              onUpdateRecords={handleUpdateDnsRecords}
               onClose={() => handleNavigate('dashboard')}
             />
           )}
@@ -222,7 +438,7 @@ export default function App() {
           {activeApp === 'cron-jobs' && (
             <CronJobsApp
               cronJobs={cronJobs}
-              onUpdateCronJobs={setCronJobs}
+              onUpdateCronJobs={handleUpdateCronJobs}
               onClose={() => handleNavigate('dashboard')}
             />
           )}
@@ -241,6 +457,8 @@ export default function App() {
               <span className="font-semibold text-slate-700 dark:text-slate-300">cPanel, Inc.</span>
               <span>·</span>
               <span>cPanel & WHM™ Version {stats.cpanelVersion}</span>
+              <span>·</span>
+              <span className="text-emerald-500 font-mono">Cloud Firestore Active</span>
             </div>
             <div className="flex items-center gap-4 text-[11px]">
               <button onClick={() => handleNavigate('php-selector')} className="hover:underline">MultiPHP Manager</button>

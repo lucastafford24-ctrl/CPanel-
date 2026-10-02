@@ -34,6 +34,10 @@ interface HeaderProps {
   currentUser: string;
   serverName: string;
   onOpenPasswordModal: () => void;
+  isFirebaseConnected: boolean;
+  firebaseUserEmail?: string | null;
+  onSignInGoogle: () => void;
+  onSignOutGoogle: () => void;
 }
 
 export const Header: React.FC<HeaderProps> = ({
@@ -49,7 +53,11 @@ export const Header: React.FC<HeaderProps> = ({
   onToggleDarkMode,
   currentUser,
   serverName,
-  onOpenPasswordModal
+  onOpenPasswordModal,
+  isFirebaseConnected,
+  firebaseUserEmail,
+  onSignInGoogle,
+  onSignOutGoogle
 }) => {
   const [userDropdownOpen, setUserDropdownOpen] = useState(false);
   const [quickLaunchOpen, setQuickLaunchOpen] = useState(false);
@@ -175,6 +183,18 @@ export const Header: React.FC<HeaderProps> = ({
 
         {/* Right Zone: Controls & User Profile */}
         <div className="flex items-center gap-1.5 sm:gap-2">
+          {/* Cloud Firestore Status Badge */}
+          <div 
+            className="hidden lg:flex items-center gap-1.5 px-2.5 py-1 bg-slate-800/90 rounded border border-slate-700 text-xs font-mono"
+            title="Firebase Cloud Firestore Database status"
+          >
+            <div className={`w-2 h-2 rounded-full ${isFirebaseConnected ? 'bg-emerald-400 animate-pulse' : 'bg-amber-400'}`} />
+            <span className="text-slate-300">Firestore:</span>
+            <span className={isFirebaseConnected ? 'text-emerald-400 font-semibold' : 'text-amber-400 font-semibold'}>
+              {isFirebaseConnected ? 'Live' : 'Connecting'}
+            </span>
+          </div>
+
           {/* Quick Apps Matrix */}
           <div className="relative" ref={quickLaunchRef}>
             <button
@@ -283,6 +303,24 @@ export const Header: React.FC<HeaderProps> = ({
                 </div>
 
                 <div className="py-1">
+                  {firebaseUserEmail ? (
+                    <div className="px-3 py-1.5 bg-slate-900/60 mx-1 rounded border border-slate-700/60 mb-1">
+                      <span className="text-[10px] text-slate-400 block">Cloud Sync Account</span>
+                      <span className="text-xs text-emerald-400 font-mono truncate block">{firebaseUserEmail}</span>
+                    </div>
+                  ) : (
+                    <button
+                      onClick={() => {
+                        onSignInGoogle();
+                        setUserDropdownOpen(false);
+                      }}
+                      className="w-full flex items-center gap-2.5 px-3 py-2 text-xs bg-orange-950/40 text-orange-200 hover:bg-orange-900/50 text-left transition-colors font-medium border-b border-slate-700"
+                    >
+                      <User className="w-3.5 h-3.5 text-[#ff6c2c]" />
+                      <span>Sign in with Google to Sync</span>
+                    </button>
+                  )}
+
                   <button
                     onClick={() => {
                       onOpenPasswordModal();
@@ -316,16 +354,29 @@ export const Header: React.FC<HeaderProps> = ({
                 </div>
 
                 <div className="border-t border-slate-700 pt-1">
-                  <button
-                    onClick={() => {
-                      alert('Simulated cPanel session reset. Session is locked to demo mode.');
-                      setUserDropdownOpen(false);
-                    }}
-                    className="w-full flex items-center gap-2.5 px-3 py-2 text-xs text-rose-400 hover:bg-slate-700 text-left transition-colors"
-                  >
-                    <LogOut className="w-3.5 h-3.5" />
-                    <span>Log Out</span>
-                  </button>
+                  {firebaseUserEmail ? (
+                    <button
+                      onClick={() => {
+                        onSignOutGoogle();
+                        setUserDropdownOpen(false);
+                      }}
+                      className="w-full flex items-center gap-2.5 px-3 py-2 text-xs text-rose-400 hover:bg-slate-700 text-left transition-colors"
+                    >
+                      <LogOut className="w-3.5 h-3.5" />
+                      <span>Sign Out ({firebaseUserEmail.split('@')[0]})</span>
+                    </button>
+                  ) : (
+                    <button
+                      onClick={() => {
+                        alert('Guest demo session reset.');
+                        setUserDropdownOpen(false);
+                      }}
+                      className="w-full flex items-center gap-2.5 px-3 py-2 text-xs text-slate-400 hover:bg-slate-700 text-left transition-colors"
+                    >
+                      <LogOut className="w-3.5 h-3.5" />
+                      <span>Reset Demo Session</span>
+                    </button>
+                  )}
                 </div>
               </div>
             )}
